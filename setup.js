@@ -32,10 +32,10 @@ input.on('data', data => {
             return setApiKey(inputStr);
         case 'SET_API_SECRET':
             return setApiSecret(inputStr);
-        case 'SET_APP_NAME':
-            return setAppName(inputStr);
         case 'SET_FAL_API_KEY':
             return setFalApiKey(inputStr);
+        case 'SET_APP_NAME':
+            return setAppName(inputStr);
         default:
     }
 });
@@ -55,19 +55,8 @@ function setApiSecret(data) {
         console.log('(Can not be blank.) Enter your Vonage API secret:');
     } else {
         process.env.VONAGE_API_SECRET = data;
-        step = 'SET_APP_NAME';
-        console.log('Enter a name for your Application (e.g., Hackathon-Video-App):');
-    }
-}
-
-function setAppName(data) {
-    if (!data) {
-        console.log('(Can not be blank.) Enter a name for your Application:');
-    } else {
-        process.env.VONAGE_APPLICATION_NAME = data;
-        step = 'SET_FAL_API_SECRET';
+        step = 'SET_FAL_API_KEY';
         console.log('Enter your fal API Key:');
-
     }
 }
 
@@ -76,9 +65,21 @@ function setFalApiKey(data) {
         console.log('(Can not be blank.) Enter your fal API key:');
     } else {
         process.env.FAL_KEY = data;
+        step = 'SET_APP_NAME';
+        console.log('Enter a name for your Application (e.g., Hackathon-Video-App):');
+    }
+}
+
+
+function setAppName(data) {
+    if (!data) {
+        console.log('(Can not be blank.) Enter a name for your Application (e.g., Hackathon-Video-App):');
+    } else {
+        process.env.VONAGE_APPLICATION_NAME = data;
         createApp(data);
     }
 }
+
 
 function createApp(appName) {
     console.log('Creating your Application...');
