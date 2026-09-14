@@ -1,0 +1,18 @@
+* { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+body { margin: 0; padding: 0; background-color: #121212; color: #ffffff; }
+.container { padding: 20px; max-width: 1200px; margin: 0 auto; }
+header { margin-bottom: 20px; text-align: center; }
+.controls { display: flex; gap: 10px; justify-content: center; margin-top: 15px; flex-wrap: wrap; }
+input[type="text"] { padding: 12px; border-radius: 6px; border: 1px solid #444; background: #222; color: white; min-width: 250px; }
+button { padding: 12px 24px; border-radius: 6px; border: none; background: #8a2be2; color: white; cursor: pointer; font-weight: bold; transition: background 0.3s; }
+button:hover { background: #9d4edd; }
+button:disabled { background: #555; cursor: not-allowed; }
+#statusMsg { color: #00ff88; margin-top: 10px; min-height: 20px; font-weight: bold; }
+.error { color: #ff4757 !important; }
+.video-grid { display: grid; grid-template-columns: 1fr 2fr; gap: 20px; height: 60vh; }
+.video-wrapper { display: flex; flex-direction: column; background: #1e1e1e; border-radius: 12px; padding: 15px; }
+.video-wrapper h2 { margin: 0 0 10px 0; font-size: 1.2rem; }
+.video-container { flex-grow: 1; background: #000; border-radius: 8px; overflow: hidden; position: relative; }
+
+/* Vonage specific UI resets to fit our containers */
+.OT_subscriber, .OT_publisher { width: 100% !important; height: 100% !important; }

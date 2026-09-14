@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vonage + AI Avatar Video Room</title>
+    <link rel="stylesheet" href="styles.css">
+    <!-- Vonage Video API Client SDK -->
+    <script src="https://video.standard.vonage.com/v2/js/opentok.min.js"></script>
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>AI Avatar Video Room</h1>
+            <div class="controls">
+                <input type="text" id="roomName" placeholder="Room Name (e.g. hackbarna)" value="hackbarna">
+                <input type="text" id="promptText" placeholder="Prompt (e.g. Cyberpunk hacker with neon glasses)"
+                    value="Cyberpunk hacker with neon glasses">
+                <button id="joinBtn">Join with AI Avatar</button>
+                <button id="stopBtn" disabled style="background: #ff4757;">Stop Session</button>
+            </div>
+            <p id="statusMsg"></p>
+        </header>
+
+        <main class="video-grid">
+            <div class="video-wrapper">
+                <h2>You (AI Processed)</h2>
+                <div id="publisher" class="video-container"></div>
+            </div>
+            <div class="video-wrapper">
+                <h2>Others</h2>
+                <div id="subscribers" class="video-container"></div>
+            </div>
+        </main>
+    </div>
+    <!-- Vanilla JS Application Logic -->
+    <script type="module" src="client.js"></script>
+</body>
+
+</html>

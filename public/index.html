@@ -1,42 +1,54 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vonage + AI Avatar Video Room</title>
+    <title>Broadcaster Studio</title>
     <link rel="stylesheet" href="styles.css">
-    <!-- Vonage Video API Client SDK -->
     <script src="https://video.standard.vonage.com/v2/js/opentok.min.js"></script>
 </head>
-
 <body>
     <div class="container">
         <header>
-            <h1>AI Avatar Video Room</h1>
+            <h1>Broadcaster Studio</h1>
             <div class="controls">
-                <input type="text" id="roomName" placeholder="Room Name (e.g. hackbarna)" value="hackbarna">
-                <input type="text" id="promptText" placeholder="Prompt (e.g. Cyberpunk hacker with neon glasses)"
-                    value="Cyberpunk hacker with neon glasses">
-                <button id="joinBtn">Join with AI Avatar</button>
-                <button id="stopBtn" disabled style="background: #ff4757;">Stop Session</button>
+                <input type="text" id="roomName" value="hackbarna" placeholder="Room Name">
+                <button id="joinBtn">Go Live</button>
+                <button id="toggleAIBtn" disabled>Turn AI On</button>
+                <button id="stopBtn" disabled class="danger">Stop Session</button>
+            </div>
+            <div class="controls action-bar" style="display:none; flex-direction:column; gap:10px;" id="actionBar">
+                <input type="text" id="codespaceUrl" placeholder="Enter your public Codespace URL (e.g. https://...github.dev)">
+                <div style="display:flex; gap:10px;">
+                    <button id="startComposerBtn">1. Start Composer Layout</button>
+                    <button id="startBroadcastBtn" disabled>2. Start HLS Broadcast</button>
+                    <button id="startArchiveBtn" disabled>3. Start Recording</button>
+                </div>
             </div>
             <p id="statusMsg"></p>
         </header>
 
         <main class="video-grid">
             <div class="video-wrapper">
-                <h2>You (AI Processed)</h2>
+                <h2>Your AI Stream</h2>
                 <div id="publisher" class="video-container"></div>
+                <div class="avatar-controls">
+                    <h3>Avatar Presets</h3>
+                    <button class="avatar-btn" data-prompt="A cyberpunk hacker with glowing neon glasses">Cyberpunk</button>
+                    <button class="avatar-btn" data-prompt="An anime character, vibrant colors">Anime</button>
+                    <button class="avatar-btn" data-prompt="A 3D style cartoon character">3D Cartoon</button>
+                    <button class="avatar-btn" data-prompt="A steampunk robot with intricate gears and glowing eyes">Robot</button>
+                </div>
             </div>
-            <div class="video-wrapper">
-                <h2>Others</h2>
-                <div id="subscribers" class="video-container"></div>
+            <div class="chat-wrapper">
+                <h2>Live Chat</h2>
+                <div id="chatHistory" class="chat-history"></div>
+                <div class="chat-input-area">
+                    <input type="text" id="chatInput" placeholder="Type a message...">
+                    <button id="sendChatBtn">Send</button>
+                </div>
             </div>
         </main>
     </div>
-    <!-- Vanilla JS Application Logic -->
-    <script type="module" src="client.js"></script>
+    <script type="module" src="broadcaster.js"></script>
 </body>
-
 </html>

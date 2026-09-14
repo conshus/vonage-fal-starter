@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Watch Live</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://video.standard.vonage.com/v2/js/opentok.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Watch Live</h1>
+            <div class="controls">
+                <input type="text" id="roomName" value="hackbarna" placeholder="Room Name">
+                <input type="text" id="hlsUrl" placeholder="Paste HLS URL from Broadcaster Console">
+                <button id="joinBtn">Connect</button>
+            </div>
+        </header>
+
+        <main class="video-grid">
+            <div class="video-wrapper">
+                <video id="hlsPlayer" controls autoplay muted style="width:100%; border-radius: 8px;"></video>
+                <div class="avatar-controls">
+                    <h3>Change Broadcaster's Avatar</h3>
+                    <button class="viewer-avatar-btn" data-prompt="A highly detailed majestic lion wearing a suit">Lion Suit</button>
+                    <button class="viewer-avatar-btn" data-prompt="A futuristic robot made of glass and chrome">Glass Robot</button>
+                </div>
+            </div>
+            <div class="chat-wrapper">
+                <h2>Live Chat</h2>
+                <div id="chatHistory" class="chat-history"></div>
+                <div class="chat-input-area">
+                    <input type="text" id="chatInput" placeholder="Type a message...">
+                    <button id="sendChatBtn">Send</button>
+                </div>
+            </div>
+        </main>
+    </div>
+    <script type="module" src="watch.js"></script>
+</body>
+</html>
