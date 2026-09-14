@@ -2,27 +2,30 @@ import { fal } from "https://esm.sh/@fal-ai/client";
 
 const ui = {
     roomName: document.getElementById('roomName'),
-    joinBtn: document.getElementById('joinBtn'),
-    stopBtn: document.getElementById('stopBtn'),
+    cameraBtn: document.getElementById('cameraBtn'),
     toggleAIBtn: document.getElementById('toggleAIBtn'),
-    startComposerBtn: document.getElementById('startComposerBtn'),
     startBroadcastBtn: document.getElementById('startBroadcastBtn'),
     startArchiveBtn: document.getElementById('startArchiveBtn'),
     actionBar: document.getElementById('actionBar'),
-    codespaceUrl: document.getElementById('codespaceUrl'),
     statusMsg: document.getElementById('statusMsg'),
     chatHistory: document.getElementById('chatHistory'),
     chatInput: document.getElementById('chatInput'),
     sendChatBtn: document.getElementById('sendChatBtn'),
-    avatarBtns: document.querySelectorAll('.avatar-btn')
+    avatarBtns: document.querySelectorAll('.avatar-btn'),
+    shareLinkContainer: document.getElementById('shareLinkContainer'),
+    shareLinkText: document.getElementById('shareLinkText'),
+    copyLinkBtn: document.getElementById('copyLinkBtn'),
+    archiveLinkContainer: document.getElementById('archiveLinkContainer'),
+    archiveDownloadLink: document.getElementById('archiveDownloadLink'),
+    archiveTimer: document.getElementById('archiveTimer')
 };
 
 let vonageSession, vonagePublisher, falConnection, localStream, peerConnection;
-let activeRenderId = null, activeRenderStreamId = null;
 let activeBroadcastId = null, activeArchiveId = null;
-let isAIFilterOn = false;
+let isCameraRunning = false, isAIFilterOn = false;
+let aiCountdownInterval = null;
 
-// --- Canvas Proxy Setup ---
+// Canvas Proxy Loop
 const canvas = document.createElement('canvas');
 canvas.width = 1280;
 canvas.height = 720;
@@ -31,146 +34,199 @@ const ctx = canvas.getContext('2d');
 const rawVideo = document.createElement('video');
 rawVideo.autoplay = true;
 rawVideo.playsInline = true;
-rawVideo.muted = true; // Prevent local audio feedback
+rawVideo.muted = true;
 
 const aiVideo = document.createElement('video');
 aiVideo.autoplay = true;
 aiVideo.playsInline = true;
 aiVideo.muted = true;
 
-// The central loop that continuously draws the active video feed to the canvas
 function renderLoop() {
     if (isAIFilterOn && aiVideo.readyState >= 2) {
         ctx.drawImage(aiVideo, 0, 0, canvas.width, canvas.height);
-    } else if (!isAIFilterOn && rawVideo.readyState >= 2) {
+    } else if (isCameraRunning && rawVideo.readyState >= 2) {
         ctx.drawImage(rawVideo, 0, 0, canvas.width, canvas.height);
     } else {
-        ctx.fillStyle = '#000000';
+        ctx.fillStyle = '#111111';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
     requestAnimationFrame(renderLoop);
 }
-renderLoop(); // Start the loop immediately
-// --------------------------
+renderLoop();
 
 function setStatus(msg, error = false) {
     ui.statusMsg.innerText = msg;
     ui.statusMsg.style.color = error ? '#ff4757' : '#00ff88';
 }
 
+// Sanitized Chat Rendering (Prevents HTML / script injection)
 function appendChat(sender, message) {
     const msgEl = document.createElement('div');
-    msgEl.innerHTML = `<strong>${sender}:</strong> ${message}`;
+    const senderEl = document.createElement('strong');
+    senderEl.textContent = `${sender}: `;
+    const textNode = document.createTextNode(message);
+    msgEl.appendChild(senderEl);
+    msgEl.appendChild(textNode);
     ui.chatHistory.appendChild(msgEl);
     ui.chatHistory.scrollTop = ui.chatHistory.scrollHeight;
 }
 
-ui.sendChatBtn.addEventListener('click', () => {
-    if (vonageSession && ui.chatInput.value) {
-        vonageSession.signal({ type: 'chat', data: JSON.stringify({ sender: 'Broadcaster', text: ui.chatInput.value }) });
-        ui.chatInput.value = '';
+function setAvatarButtonsEnabled(enabled) {
+    ui.avatarBtns.forEach(btn => btn.disabled = !enabled);
+    if (vonageSession) {
+        vonageSession.signal({
+            type: 'aiState',
+            data: JSON.stringify({ active: enabled })
+        });
+    }
+}
+
+// 1. Camera Toggle (Start Camera / Stop Camera)
+ui.cameraBtn.addEventListener('click', async () => {
+    if (isCameraRunning) {
+        // --- STOP CAMERA ---
+        if (isAIFilterOn) stopAIFilter();
+
+        if (vonagePublisher && vonageSession) {
+            vonageSession.unpublish(vonagePublisher);
+            vonagePublisher.destroy();
+            vonagePublisher = null;
+        }
+
+        if (localStream) {
+            localStream.getTracks().forEach(track => track.stop());
+            localStream = null;
+        }
+        rawVideo.srcObject = null;
+
+        isCameraRunning = false;
+        ui.cameraBtn.innerText = "Start Camera";
+        ui.cameraBtn.classList.remove('danger');
+        ui.toggleAIBtn.disabled = true;
+        setStatus("Camera stopped.");
+    } else {
+        // --- START CAMERA ---
+        ui.cameraBtn.disabled = true;
+        const room = ui.roomName.value.trim();
+
+        try {
+            localStream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: true });
+            rawVideo.srcObject = localStream;
+            const rawAudioTrack = localStream.getAudioTracks()[0];
+
+            const proxyStream = canvas.captureStream(30);
+            const proxyVideoTrack = proxyStream.getVideoTracks()[0];
+
+            if (!vonageSession) {
+                const vonageRes = await fetch(`/room/${room}`);
+                const vonageData = await vonageRes.json();
+                await connectVonage(vonageData, proxyVideoTrack, rawAudioTrack);
+            } else {
+                publishToSession(proxyVideoTrack, rawAudioTrack);
+            }
+
+            isCameraRunning = true;
+            ui.cameraBtn.innerText = "Stop Camera";
+            ui.cameraBtn.classList.add('danger');
+            ui.cameraBtn.disabled = false;
+            ui.toggleAIBtn.disabled = false;
+            ui.actionBar.style.display = 'flex';
+            setStatus("Camera active.");
+        } catch (err) {
+            console.error(err);
+            setStatus("Failed to access camera: " + err.message, true);
+            ui.cameraBtn.disabled = false;
+        }
     }
 });
 
-ui.avatarBtns.forEach(btn => {
-    btn.addEventListener('click', (e) => {
-        const prompt = e.target.getAttribute('data-prompt');
-        if (falConnection) {
-            falConnection.send({ prompt: prompt, enable_prompt_expansion: true });
-            setStatus(`Avatar changed to: ${e.target.innerText}`);
-        }
+function connectVonage(data, videoTrack, audioTrack) {
+    return new Promise((resolve) => {
+        vonageSession = OT.initSession(data.applicationId, data.sessionId);
+
+        vonageSession.on('signal:chat', (event) => {
+            const msgData = JSON.parse(event.data);
+            appendChat(msgData.sender, msgData.text);
+        });
+
+        vonageSession.on('signal:avatar', (event) => {
+            if (isAIFilterOn && falConnection) {
+                falConnection.send({ prompt: event.data, enable_prompt_expansion: true });
+                setStatus(`Viewer triggered avatar: ${event.data}`);
+                startAITimer(5); // Reset 5s countdown on switch
+            }
+        });
+
+        vonageSession.on('signal:archiveAvailable', (event) => {
+            ui.archiveDownloadLink.href = event.data;
+            ui.archiveLinkContainer.style.display = 'flex';
+            let timeLeft = 600;
+            const countdown = setInterval(() => {
+                timeLeft--;
+                const min = Math.floor(timeLeft / 60);
+                const sec = timeLeft % 60;
+                ui.archiveTimer.innerText = `Expires in: ${min}:${sec.toString().padStart(2, '0')}`;
+                if (timeLeft <= 0) {
+                    clearInterval(countdown);
+                    ui.archiveLinkContainer.style.display = 'none';
+                }
+            }, 1000);
+        });
+
+        vonageSession.connect(data.token, (err) => {
+            if (!err) {
+                publishToSession(videoTrack, audioTrack);
+                resolve();
+            }
+        });
     });
-});
+}
 
-ui.joinBtn.addEventListener('click', async () => {
-    const room = ui.roomName.value.trim();
-    ui.joinBtn.disabled = true;
-
-    // 1. Get raw webcam and feed it to our hidden rawVideo element
-    localStream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: true });
-    rawVideo.srcObject = localStream;
-    const rawAudioTrack = localStream.getAudioTracks()[0];
-
-    // 2. Capture the continuous video feed from our canvas proxy at 30 FPS
-    const proxyStream = canvas.captureStream(30);
-    const proxyVideoTrack = proxyStream.getVideoTracks()[0];
-
-    const vonageRes = await fetch(`/room/${room}`);
-    const vonageData = await vonageRes.json();
-
-    // 3. Initialize Vonage with the permanent Canvas track
-    initializeVonage(vonageData, proxyVideoTrack, rawAudioTrack);
-
-    ui.stopBtn.disabled = false;
-    ui.toggleAIBtn.disabled = false;
-});
-
-function initializeVonage(data, videoTrack, audioTrack) {
-    vonageSession = OT.initSession(data.applicationId, data.sessionId);
+function publishToSession(videoTrack, audioTrack) {
     const customStream = new MediaStream([videoTrack, audioTrack]);
-
     vonagePublisher = OT.initPublisher('publisher', {
         videoSource: customStream.getVideoTracks()[0],
         audioSource: customStream.getAudioTracks()[0],
         insertMode: 'append', width: '100%', height: '100%'
     });
-
-    vonageSession.on('signal:chat', (event) => {
-        const msgData = JSON.parse(event.data);
-        appendChat(msgData.sender, msgData.text);
-    });
-
-    vonageSession.on('signal:avatar', (event) => {
-        if (falConnection) {
-            falConnection.send({ prompt: event.data, enable_prompt_expansion: true });
-            setStatus(`Viewer changed avatar to: ${event.data}`);
-        }
-    });
-
-    vonageSession.connect(data.token, (err) => {
-        if (!err) {
-            vonageSession.publish(vonagePublisher);
-            ui.actionBar.style.display = 'flex';
-            setStatus("Live! Raw camera broadcasting.");
-        }
-    });
+    vonageSession.publish(vonagePublisher);
 }
 
+// 2. AI Filter Toggle & 5-Second Timer
 ui.toggleAIBtn.addEventListener('click', () => {
     if (isAIFilterOn) {
-        // --- TURN AI OFF ---
-        // Instantly switch the canvas back to the raw camera
-        isAIFilterOn = false;
-        ui.toggleAIBtn.innerText = "Turn AI On";
-
-        aiVideo.srcObject = null;
-
-        if (peerConnection) {
-            peerConnection.close();
-            peerConnection = null;
-        }
-        if (falConnection) {
-            falConnection.close();
-            falConnection = null;
-        }
-        setStatus("AI Filter off. Broadcasting raw camera.");
+        stopAIFilter();
     } else {
-        // --- TURN AI ON ---
-        ui.toggleAIBtn.innerText = "Starting AI...";
-        ui.toggleAIBtn.disabled = true;
         startAIFilter();
     }
 });
 
-function startAIFilter() {
+function startAITimer(durationSeconds = 5) {
+    if (aiCountdownInterval) clearInterval(aiCountdownInterval);
+    let remaining = durationSeconds;
+    ui.toggleAIBtn.innerText = `Turn AI Off (${remaining}s)`;
+
+    aiCountdownInterval = setInterval(() => {
+        remaining--;
+        if (remaining > 0) {
+            ui.toggleAIBtn.innerText = `Turn AI Off (${remaining}s)`;
+        } else {
+            clearInterval(aiCountdownInterval);
+            stopAIFilter();
+        }
+    }, 1000);
+}
+
+function startAIFilter(initialPrompt = "A cyberpunk hacker with glowing neon glasses") {
+    ui.toggleAIBtn.disabled = true;
+    ui.toggleAIBtn.innerText = "Starting AI...";
+
     falConnection = fal.realtime.connect("decart/lucy-2-5/realtime", {
         tokenProvider: async (app) => {
             const res = await fetch('/api/fal/token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ app }) });
             return (await res.json()).token;
         },
         onResult: async (result) => {
-            if (result.error) return console.error("Server Error:", result.error);
-
             if (result.type === 'ready') {
                 peerConnection = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
                 localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
@@ -178,15 +234,13 @@ function startAIFilter() {
                 peerConnection.ontrack = (event) => {
                     const aiVideoTrack = event.streams[0].getVideoTracks()[0];
                     if (aiVideoTrack) {
-                        // Feed the incoming AI track into our hidden AI video element
                         aiVideo.srcObject = new MediaStream([aiVideoTrack]);
-
-                        // Tell the canvas loop to switch to drawing the AI feed
                         isAIFilterOn = true;
-
-                        ui.toggleAIBtn.innerText = "Turn AI Off";
                         ui.toggleAIBtn.disabled = false;
-                        setStatus("AI Avatar active!");
+                        ui.toggleAIBtn.classList.add('danger');
+                        setAvatarButtonsEnabled(true);
+                        startAITimer(5);
+                        setStatus("AI Avatar active (5s limit)");
                     }
                 };
 
@@ -203,90 +257,111 @@ function startAIFilter() {
         },
         onError: (err) => {
             setStatus("AI error: " + err.message, true);
-            ui.toggleAIBtn.innerText = "Turn AI On";
-            ui.toggleAIBtn.disabled = false;
-            isAIFilterOn = false;
+            stopAIFilter();
         }
     });
 
-    falConnection.send({ prompt: "A cyberpunk hacker with glowing neon glasses", enable_prompt_expansion: true });
+    falConnection.send({ prompt: initialPrompt, enable_prompt_expansion: true });
 }
 
-// --- Start / Stop Composer ---
-ui.startComposerBtn.addEventListener('click', async () => {
-    if (activeRenderId) {
-        await fetch('/api/composer/stop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ renderId: activeRenderId }) });
-        activeRenderId = null;
-        activeRenderStreamId = null;
-        ui.startComposerBtn.innerText = "1. Start Composer Layout";
-        ui.startBroadcastBtn.disabled = true;
-        ui.startArchiveBtn.disabled = true;
-        setStatus("Composer Layout Stopped.");
-    } else {
-        setStatus("Starting Composer...");
-        const res = await fetch('/api/composer/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: vonageSession.sessionId, roomName: ui.roomName.value, codespaceUrl: ui.codespaceUrl.value }) });
-        const composerData = await res.json();
-        console.log("Composer Data:", composerData);
-        activeRenderId = composerData.id;
-        activeRenderStreamId = composerData.streamId;
-
-        ui.startComposerBtn.innerText = "Stop Composer Layout";
-        ui.startBroadcastBtn.disabled = false;
-        ui.startArchiveBtn.disabled = false;
-        setStatus("Composer Layout initialized! Ready to broadcast.");
-    }
-});
-
-// --- Start / Stop Broadcast ---
-ui.startBroadcastBtn.addEventListener('click', async () => {
-    if (activeBroadcastId) {
-        await fetch('/api/broadcast/stop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ broadcastId: activeBroadcastId, sessionId: vonageSession.sessionId }) });
-        ui.startBroadcastBtn.innerText = "2. Start HLS Broadcast";
-        activeBroadcastId = null;
-    } else {
-        const res = await fetch('/api/broadcast/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: vonageSession.sessionId }) });
-        const broadcastData = await res.json();
-        console.log("Broadcast Data:", broadcastData);
-        activeBroadcastId = broadcastData.id;
-
-        // await fetch('/api/broadcast/add-stream', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ broadcastId: activeBroadcastId, streamId: activeRenderStreamId }) });
-        ui.startBroadcastBtn.innerText = "Stop Broadcast";
-        console.log("HLS URL FOR WATCH PAGE:", broadcastData.broadcastUrls.hls);
-    }
-});
-
-// --- Start / Stop Archive ---
-ui.startArchiveBtn.addEventListener('click', async () => {
-    if (activeArchiveId) {
-        await fetch('/api/archive/stop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ archiveId: activeArchiveId }) });
-        ui.startArchiveBtn.innerText = "3. Start Recording";
-        activeArchiveId = null;
-    } else {
-        const res = await fetch('/api/archive/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: vonageSession.sessionId }) });
-        activeArchiveId = (await res.json()).id;
-        // await fetch('/api/archive/add-stream', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ archiveId: activeArchiveId, streamId: activeRenderStreamId }) });
-        ui.startArchiveBtn.innerText = "Stop Recording";
-    }
-});
-
-// --- Full Cleanup ---
-ui.stopBtn.addEventListener('click', () => {
+function stopAIFilter() {
+    if (aiCountdownInterval) clearInterval(aiCountdownInterval);
     isAIFilterOn = false;
-    ui.toggleAIBtn.innerText = "Turn AI On";
-    ui.toggleAIBtn.disabled = true;
-
-    aiVideo.srcObject = null;
-    rawVideo.srcObject = null;
 
     if (peerConnection) {
         peerConnection.close();
         peerConnection = null;
     }
-    if (falConnection) falConnection.close();
-    if (vonageSession) vonageSession.disconnect();
-    if (localStream) localStream.getTracks().forEach(track => track.stop());
+    if (falConnection) {
+        falConnection.close();
+        falConnection = null;
+    }
+    aiVideo.srcObject = null;
 
-    setStatus("Disconnected. Billing stopped.");
-    ui.joinBtn.disabled = false;
-    ui.stopBtn.disabled = true;
+    ui.toggleAIBtn.innerText = "Turn AI On";
+    ui.toggleAIBtn.classList.remove('danger');
+    ui.toggleAIBtn.disabled = !isCameraRunning;
+
+    setAvatarButtonsEnabled(false);
+    setStatus("AI turned off. Raw camera active.");
+}
+
+// Avatar Buttons (Broadcaster)
+ui.avatarBtns.forEach(btn => {
+    btn.addEventListener('click', (e) => {
+        if (!isAIFilterOn) return;
+        const prompt = e.target.getAttribute('data-prompt');
+        falConnection.send({ prompt: prompt, enable_prompt_expansion: true });
+        setStatus(`Avatar changed to: ${e.target.innerText}`);
+        startAITimer(5); // Reset the 5s window
+    });
+});
+
+// Chat Outgoing
+ui.sendChatBtn.addEventListener('click', () => {
+    if (vonageSession && ui.chatInput.value.trim()) {
+        vonageSession.signal({ type: 'chat', data: JSON.stringify({ sender: 'Broadcaster', text: ui.chatInput.value.trim() }) });
+        ui.chatInput.value = '';
+    }
+});
+
+// 3. Broadcast Controls
+ui.startBroadcastBtn.addEventListener('click', async () => {
+    if (activeBroadcastId) {
+        await fetch('/api/broadcast/stop', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ broadcastId: activeBroadcastId, sessionId: vonageSession.sessionId })
+        });
+        ui.startBroadcastBtn.innerText = "Start HLS Broadcast";
+        ui.startBroadcastBtn.classList.remove('danger');
+        activeBroadcastId = null;
+        ui.shareLinkContainer.style.display = 'none';
+        setStatus("Broadcast stopped.");
+    } else {
+        const res = await fetch('/api/broadcast/start', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId: vonageSession.sessionId })
+        });
+        const data = await res.json();
+        activeBroadcastId = data.id;
+
+        ui.startBroadcastBtn.innerText = "Stop Broadcast";
+        ui.startBroadcastBtn.classList.add('danger');
+
+        const watchUrl = `${window.location.origin}/watch.html?room=${ui.roomName.value.trim()}`;
+        ui.shareLinkText.innerText = watchUrl;
+        ui.shareLinkText.href = watchUrl;
+        ui.shareLinkContainer.style.display = 'flex';
+
+        ui.copyLinkBtn.onclick = () => {
+            navigator.clipboard.writeText(watchUrl);
+            ui.copyLinkBtn.innerText = "Copied!";
+            setTimeout(() => ui.copyLinkBtn.innerText = "Copy", 2000);
+        };
+        setStatus("HLS Broadcast live!");
+    }
+});
+
+// 4. Archive Controls
+ui.startArchiveBtn.addEventListener('click', async () => {
+    if (activeArchiveId) {
+        await fetch('/api/archive/stop', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ archiveId: activeArchiveId, sessionId: vonageSession.sessionId })
+        });
+        ui.startArchiveBtn.innerText = "Start Recording";
+        ui.startArchiveBtn.classList.remove('danger');
+        activeArchiveId = null;
+        setStatus("Recording stopped. Generating archive...");
+    } else {
+        const res = await fetch('/api/archive/start', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId: vonageSession.sessionId })
+        });
+        const data = await res.json();
+        activeArchiveId = data.id;
+        ui.startArchiveBtn.innerText = "Stop Recording";
+        ui.startArchiveBtn.classList.add('danger');
+        setStatus("Recording started.");
+    }
 });

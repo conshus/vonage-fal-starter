@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <title>Broadcaster Studio</title>
     <link rel="stylesheet" href="styles.css">
-    <script src="https://static.opentok.com/v2/js/opentok.min.js"></script>
+    <script src="https://video.standard.vonage.com/v2/js/opentok.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -12,22 +12,24 @@
             <h1>Broadcaster Studio</h1>
             <div class="controls">
                 <input type="text" id="roomName" value="hackbarna" placeholder="Room Name">
-                <button id="cameraBtn">Start Camera</button>
+                <button id="joinBtn">Go Live</button>
                 <button id="toggleAIBtn" disabled>Turn AI On</button>
+                <button id="stopBtn" disabled class="danger">Stop Session</button>
             </div>
-            
             <div class="controls action-bar" style="display:none; flex-direction:column; gap:10px;" id="actionBar">
                 <div style="display:flex; gap:10px;">
                     <button id="startBroadcastBtn">Start HLS Broadcast</button>
                     <button id="startArchiveBtn">Start Recording</button>
                 </div>
                 
+                <!-- Shareable Link UI -->
                 <div id="shareLinkContainer" style="display:none; align-items:center; gap:10px; background:#222; padding:10px; border-radius:8px;">
                     <span style="color:#aaa;">Viewer Link:</span>
                     <a id="shareLinkText" href="#" target="_blank" style="color:#007bff; word-break:break-all;"></a>
                     <button id="copyLinkBtn" style="margin-left:auto;">Copy</button>
                 </div>
 
+                <!-- Archive Download UI -->
                 <div id="archiveLinkContainer" style="display:none; align-items:center; gap:15px; background:#1e4d2b; padding:10px; border-radius:8px;">
                     <a id="archiveDownloadLink" href="#" target="_blank" style="color:#00ff88; font-weight:bold; text-decoration:none;">⬇ Download MP4 Recording</a>
                     <span id="archiveTimer" style="color:#ffcc00; font-family:monospace; margin-left:auto;">Expires in: 10:00</span>
@@ -38,13 +40,14 @@
 
         <main class="video-grid">
             <div class="video-wrapper">
-                <h2>Your Video Feed</h2>
+                <h2>Your AI Stream</h2>
                 <div id="publisher" class="video-container"></div>
                 <div class="avatar-controls">
-                    <h3>Avatar Presets (Active when AI is On)</h3>
-                    <button class="avatar-btn" data-prompt="A cyberpunk hacker with glowing neon glasses" disabled>Cyberpunk</button>
-                    <button class="avatar-btn" data-prompt="A studio ghibli anime character, vibrant colors" disabled>Anime</button>
-                    <button class="avatar-btn" data-prompt="A 3D Pixar style cartoon character" disabled>3D Cartoon</button>
+                    <h3>Avatar Presets</h3>
+                    <button class="avatar-btn" data-prompt="A cyberpunk hacker with glowing neon glasses">Cyberpunk</button>
+                    <button class="avatar-btn" data-prompt="An anime character, vibrant colors">Anime</button>
+                    <button class="avatar-btn" data-prompt="A 3D style cartoon character">3D Cartoon</button>
+                    <button class="avatar-btn" data-prompt="A steampunk robot with intricate gears and glowing eyes">Robot</button>
                 </div>
             </div>
             <div class="chat-wrapper">

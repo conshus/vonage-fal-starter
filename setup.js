@@ -93,34 +93,10 @@ function createApp(appName) {
     vonage.applications.createApplication({
         name: appName,
         capabilities: {
-            voice: {
+            video: {
                 webhooks: {
-                    answer_url: {
-                        address: `https://${process.env.CODESPACE_NAME}-${PORT}.app.github.dev/sip/vapi/answer`,
-                        http_method: "GET"
-                    },
-                    event_url: {
-                        address: `https://${process.env.CODESPACE_NAME}-${PORT}.app.github.dev/sip/vapi/events`,
-                        http_method: "POST"
-                    }
-                }
-            },
-            messages: {
-                webhooks: {
-                    inbound_url: {
-                        address: `https://${process.env.CODESPACE_NAME}-${PORT}.app.github.dev/webhooks/inbound`,
-                        http_method: "POST"
-                    },
-                    status_url: {
-                        address: `https://${process.env.CODESPACE_NAME}-${PORT}.app.github.dev/webhooks/status`,
-                        http_method: "POST"
-                    }
-                }
-            },
-            rtc: {
-                webhooks: {
-                    event_url: {
-                        address: `https://${process.env.CODESPACE_NAME}-${PORT}.app.github.dev/webhooks/rtcevent`,
+                    archive_status: {
+                        address: `https://${process.env.CODESPACE_NAME}-${PORT}.app.github.dev/api/archive/status`,
                         http_method: "POST"
                     }
                 }
@@ -168,6 +144,7 @@ VONAGE_APPLICATION_ID="${process.env.VONAGE_APPLICATION_ID}"
 VONAGE_PRIVATE_KEY="${formattedPrivateKey}"
 VONAGE_PRIVATE_KEY64="${process.env.VONAGE_PRIVATE_KEY64}"
 FAL_KEY="${process.env.FAL_KEY}"
+CODESPACE_URL="https://${process.env.CODESPACE_NAME}-${PORT}.app.github.dev"
 `;
 
     fs.writeFile(import.meta.dirname + '/.env', contents, (err) => {

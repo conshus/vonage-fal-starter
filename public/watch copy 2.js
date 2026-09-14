@@ -15,28 +15,31 @@ const ui = {
 let vonageSession;
 let viewerName = 'Anonymous';
 
+// 1. Force the native dialog open on top of the rest of the UI
 ui.joinModal.showModal();
-ui.joinModal.addEventListener('cancel', (e) => e.preventDefault());
 
-// Sanitized Chat Rendering (Prevents HTML / script injection)
+// Prevent the user from bypassing the form by pressing the Escape key
+ui.joinModal.addEventListener('cancel', (e) => {
+    e.preventDefault(); 
+});
+
 function appendChat(sender, message) {
     const msgEl = document.createElement('div');
-    const senderEl = document.createElement('strong');
-    senderEl.textContent = `${sender}: `;
-    const textNode = document.createTextNode(message);
-    msgEl.appendChild(senderEl);
-    msgEl.appendChild(textNode);
+    msgEl.innerHTML = `<strong>${sender}:</strong> ${message}`;
     ui.chatHistory.appendChild(msgEl);
     ui.chatHistory.scrollTop = ui.chatHistory.scrollHeight;
 }
 
+// 2. The 'close' event automatically fires when the form inside is submitted
 ui.joinModal.addEventListener('close', async () => {
     viewerName = ui.viewerNameInput.value.trim() || 'Anonymous';
     
-    // 1. Fetch HLS stream
+    // Check if stream is live and get HLS URL
     const hlsRes = await fetch(`/api/broadcast/hls/${room}`);
     if (hlsRes.ok) {
         const { hlsUrl } = await hlsRes.json();
+        
+        // Play HLS (Autoplay works perfectly because they interacted with the dialog)
         if (Hls.isSupported()) {
             const hls = new Hls();
             hls.loadSource(hlsUrl);
@@ -47,10 +50,10 @@ ui.joinModal.addEventListener('close', async () => {
             ui.video.addEventListener('loadedmetadata', () => ui.video.play());
         }
     } else {
-        appendChat('System', 'Broadcast is not currently live. Refresh once the broadcaster goes live.');
+        appendChat('System', 'Broadcast is not currently live. Wait a moment and refresh.');
     }
 
-    // 2. Connect Vonage Session for Chat & Signals
+    // Connect to Vonage Session for Signaling
     const vonageRes = await fetch(`/room/${room}`);
     const vonageData = await vonageRes.json();
     
@@ -61,22 +64,16 @@ ui.joinModal.addEventListener('close', async () => {
         appendChat(msgData.sender, msgData.text);
     });
 
-    // Toggle avatar buttons based on Broadcaster AI state
-    vonageSession.on('signal:aiState', (event) => {
-        const { active } = JSON.parse(event.data);
-        ui.avatarBtns.forEach(btn => btn.disabled = !active);
-    });
-
     vonageSession.connect(vonageData.token, (err) => {
-        if (!err) console.log("Connected to session for chat and signals.");
+        if (!err) console.log("Connected to Signaling channel");
     });
 });
 
 ui.sendChatBtn.addEventListener('click', () => {
-    if (vonageSession && ui.chatInput.value.trim()) {
+    if (vonageSession && ui.chatInput.value) {
         vonageSession.signal({ 
             type: 'chat', 
-            data: JSON.stringify({ sender: viewerName, text: ui.chatInput.value.trim() }) 
+            data: JSON.stringify({ sender: viewerName, text: ui.chatInput.value }) 
         });
         ui.chatInput.value = '';
     }
@@ -84,7 +81,7 @@ ui.sendChatBtn.addEventListener('click', () => {
 
 ui.avatarBtns.forEach(btn => {
     btn.addEventListener('click', (e) => {
-        if (vonageSession && !btn.disabled) {
+        if (vonageSession) {
             vonageSession.signal({ type: 'avatar', data: e.target.getAttribute('data-prompt') });
         }
     });
