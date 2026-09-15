@@ -22,9 +22,7 @@ const ui = {
 
 let vonageSession, vonagePublisher, falConnection, localStream, peerConnection;
 let activeBroadcastId = null, activeArchiveId = null;
-let isCameraRunning = false;
-let isAIArmed = false;     // Tracks if the buttons are unlocked
-let isGenerating = false;  // Tracks if fal.ai is actively billing/streaming
+let isCameraRunning = false, isAIFilterOn = false;
 let aiCountdownInterval = null;
 
 // Canvas Proxy Loop
@@ -44,7 +42,7 @@ aiVideo.playsInline = true;
 aiVideo.muted = true;
 
 function renderLoop() {
-    if (isGenerating && aiVideo.readyState >= 2) {
+    if (isAIFilterOn && aiVideo.readyState >= 2) {
         ctx.drawImage(aiVideo, 0, 0, canvas.width, canvas.height);
     } else if (isCameraRunning && rawVideo.readyState >= 2) {
         ctx.drawImage(rawVideo, 0, 0, canvas.width, canvas.height);
@@ -61,6 +59,7 @@ function setStatus(msg, error = false) {
     ui.statusMsg.style.color = error ? '#ff4757' : '#00ff88';
 }
 
+// Sanitized Chat Rendering (Prevents HTML / script injection)
 function appendChat(sender, message) {
     const msgEl = document.createElement('div');
     const senderEl = document.createElement('strong');
@@ -72,7 +71,6 @@ function appendChat(sender, message) {
     ui.chatHistory.scrollTop = ui.chatHistory.scrollHeight;
 }
 
-// Controls whether avatar buttons are clickable (and signals the Watch page)
 function setAvatarButtonsEnabled(enabled) {
     ui.avatarBtns.forEach(btn => btn.disabled = !enabled);
     if (vonageSession) {
@@ -83,17 +81,11 @@ function setAvatarButtonsEnabled(enabled) {
     }
 }
 
-// 1. Camera Toggle
+// 1. Camera Toggle (Start Camera / Stop Camera)
 ui.cameraBtn.addEventListener('click', async () => {
     if (isCameraRunning) {
         // --- STOP CAMERA ---
-        if (isAIArmed) {
-            isAIArmed = false;
-            setAvatarButtonsEnabled(false);
-            ui.toggleAIBtn.innerText = "Enable AI Features";
-            ui.toggleAIBtn.classList.remove('danger');
-        }
-        if (isGenerating) stopAIFilter();
+        if (isAIFilterOn) stopAIFilter();
 
         if (vonagePublisher && vonageSession) {
             vonageSession.unpublish(vonagePublisher);
@@ -137,8 +129,6 @@ ui.cameraBtn.addEventListener('click', async () => {
             ui.cameraBtn.innerText = "Stop Camera";
             ui.cameraBtn.classList.add('danger');
             ui.cameraBtn.disabled = false;
-            
-            ui.toggleAIBtn.innerText = "Enable AI Features";
             ui.toggleAIBtn.disabled = false;
             ui.actionBar.style.display = 'flex';
             setStatus("Camera active.");
@@ -159,10 +149,11 @@ function connectVonage(data, videoTrack, audioTrack) {
             appendChat(msgData.sender, msgData.text);
         });
 
-        // Listen for Viewers clicking an avatar button
         vonageSession.on('signal:avatar', (event) => {
-            if (isAIArmed) {
-                handleAvatarRequest(event.data, "Viewer");
+            if (isAIFilterOn && falConnection) {
+                falConnection.send({ prompt: event.data, enable_prompt_expansion: true });
+                setStatus(`Viewer triggered avatar: ${event.data}`);
+                startAITimer(5); // Reset 5s countdown on switch
             }
         });
 
@@ -201,72 +192,34 @@ function publishToSession(videoTrack, audioTrack) {
     vonageSession.publish(vonagePublisher);
 }
 
-// 2. AI Armed Toggle (No Billing Yet)
+// 2. AI Filter Toggle & 5-Second Timer
 ui.toggleAIBtn.addEventListener('click', () => {
-    if (isAIArmed) {
-        // Disarm the system
-        isAIArmed = false;
-        ui.toggleAIBtn.innerText = "Enable AI Features";
-        ui.toggleAIBtn.classList.remove('danger');
-        setAvatarButtonsEnabled(false);
-        
-        // If an avatar is currently generating, kill it
-        if (isGenerating) stopAIFilter();
-        setStatus("AI Features disabled.");
+    if (isAIFilterOn) {
+        stopAIFilter();
     } else {
-        // Arm the system (unlocks buttons)
-        isAIArmed = true;
-        ui.toggleAIBtn.innerText = "Disable AI Features";
-        ui.toggleAIBtn.classList.add('danger');
-        setAvatarButtonsEnabled(true);
-        setStatus("AI Features armed. Select an avatar to apply the filter.");
+        startAIFilter();
     }
 });
 
-// Avatar Buttons (Broadcaster)
-ui.avatarBtns.forEach(btn => {
-    btn.addEventListener('click', (e) => {
-        if (!isAIArmed) return;
-        const prompt = e.target.getAttribute('data-prompt');
-        handleAvatarRequest(prompt, "Broadcaster");
-    });
-});
-
-// Central logic for handling avatar requests (from Broadcaster OR Viewers)
-function handleAvatarRequest(prompt, source) {
-    if (isGenerating && falConnection) {
-        // AI is already running, just swap the prompt and reset the timer
-        falConnection.send({ prompt: prompt, enable_prompt_expansion: true });
-        startAITimer(5);
-        setStatus(`${source} changed avatar.`);
-    } else {
-        // Start a fresh AI connection
-        startAIFilter(prompt, source);
-    }
-}
-
-// The 5-second countdown logic
 function startAITimer(durationSeconds = 5) {
     if (aiCountdownInterval) clearInterval(aiCountdownInterval);
     let remaining = durationSeconds;
-    
-    setStatus(`AI Avatar active (${remaining}s remaining)`);
+    ui.toggleAIBtn.innerText = `Turn AI Off (${remaining}s)`;
 
     aiCountdownInterval = setInterval(() => {
         remaining--;
         if (remaining > 0) {
-            setStatus(`AI Avatar active (${remaining}s remaining)`);
+            ui.toggleAIBtn.innerText = `Turn AI Off (${remaining}s)`;
         } else {
             clearInterval(aiCountdownInterval);
-            stopAIFilter(); // Times up, shut it down
+            stopAIFilter();
         }
     }, 1000);
 }
 
-// Establish WebRTC & Start Billing
-function startAIFilter(prompt, source) {
-    isGenerating = true;
-    setStatus(`${source} requested avatar. Connecting to fal.ai...`);
+function startAIFilter(initialPrompt = "A cyberpunk hacker with glowing neon glasses") {
+    ui.toggleAIBtn.disabled = true;
+    ui.toggleAIBtn.innerText = "Starting AI...";
 
     falConnection = fal.realtime.connect("decart/lucy-2-5/realtime", {
         tokenProvider: async (app) => {
@@ -282,8 +235,12 @@ function startAIFilter(prompt, source) {
                     const aiVideoTrack = event.streams[0].getVideoTracks()[0];
                     if (aiVideoTrack) {
                         aiVideo.srcObject = new MediaStream([aiVideoTrack]);
-                        // Wait until the video actually arrives to start the 5-second timer
-                        startAITimer(5); 
+                        isAIFilterOn = true;
+                        ui.toggleAIBtn.disabled = false;
+                        ui.toggleAIBtn.classList.add('danger');
+                        setAvatarButtonsEnabled(true);
+                        startAITimer(5);
+                        setStatus("AI Avatar active (5s limit)");
                     }
                 };
 
@@ -304,15 +261,13 @@ function startAIFilter(prompt, source) {
         }
     });
 
-    falConnection.send({ prompt: prompt, enable_prompt_expansion: true });
+    falConnection.send({ prompt: initialPrompt, enable_prompt_expansion: true });
 }
 
-// Kill WebRTC & Stop Billing
 function stopAIFilter() {
     if (aiCountdownInterval) clearInterval(aiCountdownInterval);
-    isGenerating = false;
+    isAIFilterOn = false;
 
-    // Disconnecting instantly stops the fal.ai billing meter
     if (peerConnection) {
         peerConnection.close();
         peerConnection = null;
@@ -323,10 +278,24 @@ function stopAIFilter() {
     }
     aiVideo.srcObject = null;
 
-    if (isAIArmed) {
-        setStatus("AI session ended. Ready for next avatar.");
-    }
+    ui.toggleAIBtn.innerText = "Turn AI On";
+    ui.toggleAIBtn.classList.remove('danger');
+    ui.toggleAIBtn.disabled = !isCameraRunning;
+
+    setAvatarButtonsEnabled(false);
+    setStatus("AI turned off. Raw camera active.");
 }
+
+// Avatar Buttons (Broadcaster)
+ui.avatarBtns.forEach(btn => {
+    btn.addEventListener('click', (e) => {
+        if (!isAIFilterOn) return;
+        const prompt = e.target.getAttribute('data-prompt');
+        falConnection.send({ prompt: prompt, enable_prompt_expansion: true });
+        setStatus(`Avatar changed to: ${e.target.innerText}`);
+        startAITimer(5); // Reset the 5s window
+    });
+});
 
 // Chat Outgoing
 ui.sendChatBtn.addEventListener('click', () => {
