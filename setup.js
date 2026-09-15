@@ -97,7 +97,7 @@ function createApp(appName) {
                 webhooks: {
                     archive_status: {
                         address: `https://${process.env.CODESPACE_NAME}-${PORT}.app.github.dev/api/archive/status`,
-                        http_method: "POST"
+                        active: true
                     }
                 }
             }
